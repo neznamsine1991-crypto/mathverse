@@ -78,7 +78,7 @@ def generated_category_questions(grade, topic):
             a=n+3; b=n+5; ans=b-a
             prompt=f"Calculate −{a} + {b}."; steps=[f"Start at −{a}.",f"Moving {b} units right reaches {ans}.",f"−{a} + {b} = {ans}."]
         elif topic == "equations":
-            coefficient=(n%4)+2; answer=n+3; total=coefficient*answer
+            coefficient=(n%4)+2; answer=n+3; total=coefficient*answer; ans=answer
             prompt=f"Solve: {coefficient}x = {total}."; steps=[f"Divide both sides by {coefficient}.",f"x = {total} ÷ {coefficient}.",f"x = {answer}."]
         elif topic == "proportions":
             numerator=n+1; denominator=n+2; multiplier=3; ans=numerator*multiplier; right=denominator*multiplier
@@ -91,7 +91,7 @@ def generated_category_questions(grade, topic):
             sign=f"+ {intercept}" if intercept>=0 else f"− {abs(intercept)}"
             prompt=f"For y = {slope}x {sign}, what is y when x = {x}?"; steps=[f"Substitute x = {x}.",f"y = {slope}({x}) {sign}.",f"y = {ans}."]
         elif topic == "systems":
-            x=n+3; y=n+1; total=x+y; difference=x-y
+            x=n+3; y=n+1; total=x+y; difference=x-y; ans=x
             prompt=f"Solve: x + y = {total} and x − y = {difference}. What is x?"; steps=["Add the equations to eliminate y.",f"2x = {total+difference}.",f"x = {x}."]
         elif topic == "pythagorean":
             # familiar scaled 3-4-5 triples
