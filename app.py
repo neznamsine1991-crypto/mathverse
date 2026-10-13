@@ -114,6 +114,10 @@ def db():
     if "db" not in g:
         g.db = sqlite3.connect(app.config["DATABASE"]); g.db.row_factory = sqlite3.Row
         g.db.execute("CREATE TABLE IF NOT EXISTS attempts (id TEXT PRIMARY KEY, created_at TEXT, grade INTEGER, topic TEXT, score INTEGER, total INTEGER, answers TEXT)")
+        g.db.execute("CREATE TABLE IF NOT EXISTS profiles (owner TEXT PRIMARY KEY, grade INTEGER, display_name TEXT, theme TEXT DEFAULT 'dark', goal INTEGER DEFAULT 5, onboarding INTEGER DEFAULT 0)")
+        g.db.execute("CREATE TABLE IF NOT EXISTS bookmarks (owner TEXT, question_id TEXT, created_at TEXT, PRIMARY KEY(owner, question_id))")
+        g.db.execute("CREATE TABLE IF NOT EXISTS study_plans (id TEXT PRIMARY KEY, owner TEXT, topic TEXT, minutes INTEGER, target_date TEXT, created_at TEXT)")
+        g.db.execute("CREATE TABLE IF NOT EXISTS daily_challenges (owner TEXT, challenge_date TEXT, question_id TEXT, completed INTEGER DEFAULT 0, PRIMARY KEY(owner, challenge_date))")
     return g.db
 @app.teardown_appcontext
 def close_db(_):
@@ -121,6 +125,12 @@ def close_db(_):
 def guest():
     if "guest" not in session: session["guest"] = str(uuid.uuid4())
     return session["guest"]
+def profile():
+    owner=guest(); row=db().execute("SELECT * FROM profiles WHERE owner=?",(owner,)).fetchone()
+    if not row:
+        db().execute("INSERT INTO profiles(owner,grade,display_name) VALUES(?,?,?)",(owner,5,"Student")); db().commit()
+        row=db().execute("SELECT * FROM profiles WHERE owner=?",(owner,)).fetchone()
+    return row
 def normalize(v): return str(v).lower().replace(" ", "").replace("−", "-").replace("×", "*")
 def numeric_value(value):
     """Parse normal numbers, simple fractions, and mixed numbers without eval."""
@@ -144,8 +154,9 @@ def get_question(qid): return next((x for x in QUESTIONS if x["id"] == qid), Non
 def home(): return render_template("home.html")
 @app.route("/dashboard")
 def dashboard():
-    guest(); rows=db().execute("SELECT * FROM attempts ORDER BY created_at DESC").fetchall(); answered=sum(r["total"] for r in rows); right=sum(r["score"] for r in rows)
-    return render_template("dashboard.html", rows=rows[:5], total_tests=len(rows), answered=answered, accuracy=round(right/answered*100) if answered else 0)
+    p=profile(); rows=db().execute("SELECT * FROM attempts ORDER BY created_at DESC").fetchall(); answered=sum(r["total"] for r in rows); right=sum(r["score"] for r in rows)
+    topics=len({get_question(a["qid"])["topic"] for r in rows for a in __import__('json').loads(r["answers"])})
+    return render_template("dashboard.html", profile=p, rows=rows[:5], total_tests=len(rows), answered=answered, topics=topics, accuracy=round(right/answered*100) if answered else 0)
 @app.route("/grades")
 def grades(): return render_template("grades.html", topics=TOPICS)
 @app.route("/grades/<int:grade>")
@@ -202,5 +213,66 @@ def mistakes():
       for a in __import__('json').loads(r["answers"]):
        if not a["correct"]: items.append({**a,"q":get_question(a["qid"])})
     return render_template("mistakes.html", items=items)
+
+@app.route("/onboarding", methods=["GET", "POST"])
+def onboarding():
+    p=profile()
+    if request.method == "POST":
+        db().execute("UPDATE profiles SET display_name=?, grade=?, goal=?, onboarding=1 WHERE owner=?",(request.form.get("display_name","Student")[:40] or "Student",int(request.form["grade"]),int(request.form["goal"]),guest())); db().commit()
+        flash("Your learning space is ready."); return redirect(url_for("dashboard"))
+    return render_template("onboarding.html", profile=p)
+
+@app.route("/profile", methods=["GET", "POST"])
+def profile_page():
+    p=profile()
+    if request.method == "POST":
+        db().execute("UPDATE profiles SET display_name=?, grade=?, goal=? WHERE owner=?",(request.form.get("display_name","Student")[:40] or "Student",int(request.form["grade"]),int(request.form["goal"]),guest())); db().commit(); flash("Profile saved."); return redirect(url_for("profile_page"))
+    return render_template("profile.html", profile=p, topics=TOPICS)
+
+@app.route("/progress")
+def progress():
+    profile(); rows=db().execute("SELECT * FROM attempts ORDER BY created_at").fetchall()
+    grade_stats=[]
+    for grade in TOPICS:
+        eligible=[r for r in rows if r["grade"]==grade]; total=sum(r["total"] for r in eligible); right=sum(r["score"] for r in eligible)
+        grade_stats.append((grade, len(eligible), round(right/total*100) if total else 0))
+    achievements=[]
+    if rows: achievements.append(("First assessment", "You completed your first learning session."))
+    if len(rows)>=5: achievements.append(("Five sessions", "You have built a consistent practice habit."))
+    if any(r["score"]==r["total"] for r in rows): achievements.append(("Perfect score", "You earned a full score on an assessment."))
+    return render_template("progress.html", rows=rows, grade_stats=grade_stats, achievements=achievements)
+
+@app.route("/saved")
+def saved():
+    profile(); rows=db().execute("SELECT question_id FROM bookmarks WHERE owner=? ORDER BY created_at DESC",(guest(),)).fetchall(); items=[get_question(r["question_id"]) for r in rows if get_question(r["question_id"])]
+    return render_template("saved.html", items=items)
+
+@app.route("/bookmark/<qid>", methods=["POST"])
+def bookmark(qid):
+    if not get_question(qid): abort(404)
+    owner=guest(); existing=db().execute("SELECT 1 FROM bookmarks WHERE owner=? AND question_id=?",(owner,qid)).fetchone()
+    if existing: db().execute("DELETE FROM bookmarks WHERE owner=? AND question_id=?",(owner,qid)); flash("Question removed from saved items.")
+    else: db().execute("INSERT INTO bookmarks VALUES(?,?,?)",(owner,qid,datetime.utcnow().isoformat())); flash("Question saved for review.")
+    db().commit(); return redirect(request.referrer or url_for("saved"))
+
+@app.route("/challenge", methods=["GET", "POST"])
+def challenge():
+    p=profile(); today=datetime.utcnow().date().isoformat(); owner=guest(); row=db().execute("SELECT * FROM daily_challenges WHERE owner=? AND challenge_date=?",(owner,today)).fetchone()
+    if not row:
+        pool=[x for x in QUESTIONS if x["grade"]==p["grade"]]; question=random.choice(pool); db().execute("INSERT INTO daily_challenges(owner,challenge_date,question_id) VALUES(?,?,?)",(owner,today,question["id"])); db().commit(); row=db().execute("SELECT * FROM daily_challenges WHERE owner=? AND challenge_date=?",(owner,today)).fetchone()
+    question=get_question(row["question_id"])
+    feedback=None
+    if request.method=="POST":
+        answer=request.form.get("answer",""); feedback=correct(question,answer)
+        if feedback: db().execute("UPDATE daily_challenges SET completed=1 WHERE owner=? AND challenge_date=?",(owner,today)); db().commit()
+    return render_template("challenge.html", question=question, completed=row["completed"], feedback=feedback)
+
+@app.route("/plans", methods=["GET", "POST"])
+def plans():
+    p=profile()
+    if request.method=="POST":
+        db().execute("INSERT INTO study_plans VALUES(?,?,?,?,?,?)",(str(uuid.uuid4()),guest(),request.form["topic"],int(request.form["minutes"]),request.form.get("target_date", ""),datetime.utcnow().isoformat())); db().commit(); flash("Study plan added."); return redirect(url_for("plans"))
+    items=db().execute("SELECT * FROM study_plans WHERE owner=? ORDER BY created_at DESC",(guest(),)).fetchall()
+    return render_template("plans.html", profile=p, topics=TOPICS[p["grade"]], items=items)
 
 if __name__ == "__main__": app.run(host="0.0.0.0", port=int(os.environ.get("PORT",5000)), debug=True)
