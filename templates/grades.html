@@ -1,0 +1,1 @@
+{% extends 'base.html' %}{% block content %}<p class="eyebrow">CURRICULUM</p><h1>Choose your grade.</h1><div class="grade-grid">{% for grade, entries in topics.items() %}<a class="grade-card" href="{{url_for('grade',grade=grade)}}"><span>GRADE</span><strong>{{grade}}</strong><p>{{entries|length}} learning modules</p><i>Explore →</i></a>{% endfor %}</div>{% endblock %}
