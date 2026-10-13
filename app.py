@@ -50,6 +50,66 @@ q("g8-7",8,"scientific","Write 4,500,000 in scientific notation.","4.5e6",["Move
 q("g8-8",8,"scientific","Calculate (3 × 10³)(2 × 10⁴).","6e7",["Multiply coefficients: 3 × 2 = 6.","Add powers: 10³ × 10⁴ = 10⁷.","The answer is 6 × 10⁷."]),
 ]
 
+# Each listed curriculum category is expanded with ten distinct, deterministic
+# questions. Keeping this generation beside the curated set makes the initial
+# bank easy to audit and ensures every category is ready on first launch.
+def generated_category_questions(grade, topic):
+    questions = []
+    for n in range(1, 11):
+        ident = f"g{grade}-{topic}-generated-{n}"
+        if topic == "whole-numbers":
+            a, b = 1200 + n * 137, 800 + n * 83; ans = a + b
+            prompt=f"Calculate {a:,} + {b:,}."; steps=[f"Add the numbers by place value.",f"{a:,} + {b:,} = {ans:,}.","Check that the sum is reasonable."]
+        elif topic == "fractions":
+            denom=n+2; a=n; b=1; ans=f"{a+b}/{denom}"
+            prompt=f"Calculate {a}/{denom} + {b}/{denom}."; steps=["The denominators match.",f"Add numerators: {a} + {b} = {a+b}.",f"The answer is {ans}."]
+        elif topic == "geometry":
+            length, width=n+3,n+2; ans=length*width
+            prompt=f"A rectangle is {length} cm by {width} cm. What is its area in cm²?"; steps=["Area = length × width.",f"{length} × {width} = {ans}.",f"The area is {ans} cm²."]
+        elif topic == "measurement":
+            hours=n+1; ans=hours*60
+            prompt=f"How many minutes are in {hours} hours?"; steps=["One hour contains 60 minutes.",f"{hours} × 60 = {ans}.",f"There are {ans} minutes."]
+        elif topic == "ratios":
+            total=n*12; groups=n+2; ans=total/groups if total%groups else total//groups
+            # use exact division values for a transparent unit-rate question
+            total, groups, ans = (n+2)*6, n+2, 6
+            prompt=f"{total} stickers are shared equally among {groups} students. How many does each student receive?"; steps=["Equal sharing means division.",f"{total} ÷ {groups} = {ans}.",f"Each student receives {ans} stickers."]
+        elif topic == "integers":
+            a=n+3; b=n+5; ans=b-a
+            prompt=f"Calculate −{a} + {b}."; steps=[f"Start at −{a}.",f"Moving {b} units right reaches {ans}.",f"−{a} + {b} = {ans}."]
+        elif topic == "equations":
+            coefficient=(n%4)+2; answer=n+3; total=coefficient*answer
+            prompt=f"Solve: {coefficient}x = {total}."; steps=[f"Divide both sides by {coefficient}.",f"x = {total} ÷ {coefficient}.",f"x = {answer}."]
+        elif topic == "proportions":
+            numerator=n+1; denominator=n+2; multiplier=3; ans=numerator*multiplier; right=denominator*multiplier
+            prompt=f"Find x: {numerator}/{denominator} = x/{right}."; steps=[f"Scale {denominator} to {right} by multiplying by {multiplier}.",f"Multiply {numerator} by {multiplier} too.",f"x = {ans}."]
+        elif topic == "expressions":
+            a,b=n+2,n+4; ans=f"{a+b}x-{n}"
+            prompt=f"Simplify: {a}x + {b}x − {n}."; steps=[f"{a}x and {b}x are like terms.",f"{a}x + {b}x = {a+b}x.",f"The simplified expression is {ans}."]
+        elif topic == "linear":
+            slope=n+1; intercept=n-2; x=n+3; ans=slope*x+intercept
+            sign=f"+ {intercept}" if intercept>=0 else f"− {abs(intercept)}"
+            prompt=f"For y = {slope}x {sign}, what is y when x = {x}?"; steps=[f"Substitute x = {x}.",f"y = {slope}({x}) {sign}.",f"y = {ans}."]
+        elif topic == "systems":
+            x=n+3; y=n+1; total=x+y; difference=x-y
+            prompt=f"Solve: x + y = {total} and x − y = {difference}. What is x?"; steps=["Add the equations to eliminate y.",f"2x = {total+difference}.",f"x = {x}."]
+        elif topic == "pythagorean":
+            # familiar scaled 3-4-5 triples
+            scale=n+1; a,b,ans=3*scale,4*scale,5*scale
+            prompt=f"A right triangle has legs {a} and {b}. Find its hypotenuse."; steps=["Use a² + b² = c².",f"{a}² + {b}² = {ans}².",f"The hypotenuse is {ans}."]
+        elif topic == "scientific":
+            base=n+1; power=n+2; ans=f"{base}e{power}"
+            prompt=f"Write {base} × 10^{power} using e notation."; steps=["Keep the coefficient.",f"Use e to represent × 10 to a power.",f"The answer is {ans}."]
+        else:
+            # Should never occur: all TOPICS above have an explicit generator.
+            continue
+        questions.append(q(ident, grade, topic, prompt, ans, steps, "easy" if n < 4 else "medium"))
+    return questions
+
+for _grade, _topics in TOPICS.items():
+    for _topic, _name in _topics:
+        QUESTIONS.extend(generated_category_questions(_grade, _topic))
+
 def db():
     if "db" not in g:
         g.db = sqlite3.connect(app.config["DATABASE"]); g.db.row_factory = sqlite3.Row
